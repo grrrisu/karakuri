@@ -57,6 +57,10 @@ defmodule Karakuri.Executor.ExecutorTest do
     end
   end
 
+  def notify(_notification, _step) do
+    :ok
+  end
+
   describe "execute/2" do
     test "execute workflow", %{workflow: workflow} do
       execution = Executor.execute(workflow, %{text: "The answer is 42"})
@@ -148,6 +152,13 @@ defmodule Karakuri.Executor.ExecutorTest do
       assert step_3.output.match == "42"
 
       assert execution.status == :completed
+    end
+
+    test "receive notifications", %{workflow: workflow} do
+      Executor.execute(workflow, %{text: "The answer is 42"})
+      assert_received {:notify, :step_started, "test", %ExecutionStep{}}
+      assert_received {:notify, :step_finished, "test", %ExecutionStep{}}
+      assert_received {:notify, :workflow_finished, "test"}
     end
   end
 end

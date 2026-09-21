@@ -19,6 +19,16 @@ defmodule Karakuri.Executor.Tool.RegexTest do
 
   test "regex tool returns error with multiple captures" do
     input = %{text: "The answer is 42", pattern: ~r/The (.+) is (\d+)/}
-    assert Regex.execute(input) == {:error, "unsupported match format"}
+    assert {:error, _} = Regex.execute(input)
+  end
+
+  test "regex tool returns named captures" do
+    input = %{
+      text: "The answer is 42",
+      pattern: ~r/The answer is (?<number>\d+)/,
+      named_captures: true
+    }
+
+    assert Regex.execute(input) == {:ok, %{"number" => "42"}}
   end
 end

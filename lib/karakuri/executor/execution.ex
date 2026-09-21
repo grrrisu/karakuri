@@ -10,9 +10,18 @@ defmodule Karakuri.Executor.Execution do
             status: state(),
             input: map(),
             output: map(),
-            error: any()
+            error: any(),
+            started_at: any() | nil,
+            finished_at: any() | nil
           }
 
-    defstruct name: nil, order: 0, status: :pending, input: %{}, output: %{}, error: nil
+    defstruct name: nil,
+              order: 0,
+              status: :pending,
+              input: %{},
+              output: %{},
+              error: nil,
+              started_at: nil,
+              finished_at: nil
   end
 end

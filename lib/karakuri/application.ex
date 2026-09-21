@@ -8,6 +8,8 @@ defmodule Karakuri.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      {Task.Supervisor, name: Karakuri.Executor.TaskSupervisor},
+      Karakuri.Server,
       KarakuriWeb.Telemetry,
       Karakuri.Repo,
       {DNSCluster, query: Application.get_env(:karakuri, :dns_cluster_query) || :ignore},

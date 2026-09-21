@@ -86,6 +86,7 @@ defmodule KarakuriWeb do
       import Phoenix.HTML
       # Core UI components
       import KarakuriWeb.CoreComponents
+      import KarakuriWeb.MainComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS
