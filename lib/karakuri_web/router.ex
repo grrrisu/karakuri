@@ -17,7 +17,7 @@ defmodule KarakuriWeb.Router do
   scope "/", KarakuriWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live "/", HomeLive, :index
     live "/workflows", WorkflowLive.Index
     live "/workflows/:workflow", WorkflowLive.Show
   end

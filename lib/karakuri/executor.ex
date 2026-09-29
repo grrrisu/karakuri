@@ -47,7 +47,7 @@ defmodule Karakuri.Executor do
   defp execute_step(workflow_name, step, executed_steps, args, pid) do
     with {:ok, input} <- extract_input(step, executed_steps, args),
          _msg <- notify_step_started(pid, workflow_name, step, input),
-         _ <- Process.sleep(500),
+         # _ <- Process.sleep(500),
          {:ok, current} <- execute_each(step, input),
          _msg <- notfiy_step_finished(pid, workflow_name, current) do
       {:cont, {:completed, current}}
