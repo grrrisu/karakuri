@@ -46,7 +46,8 @@ defmodule KarakuriWeb.WorkflowLive.Components do
         started: !is_nil(assigns.execution),
         finished: get_in(List.last(steps), [Access.elem(1), Access.key(:status)]) == :completed,
         started_at: get_in(List.first(steps), [Access.elem(1), Access.key(:started_at)]),
-        finished_at: get_in(List.last(steps), [Access.elem(1), Access.key(:finished_at)])
+        finished_at: get_in(List.last(steps), [Access.elem(1), Access.key(:finished_at)]),
+        result: assigns.execution && assigns.execution.output
       )
 
     ~H"""
@@ -78,7 +79,7 @@ defmodule KarakuriWeb.WorkflowLive.Components do
           <.icon name="hero-inbox-arrow-down" class="size-4" />
         </div>
         <div class="timeline-end timeline-box min-w-full min-h-10">
-          {render_slot(@workflow_output)}
+          {render_slot(@workflow_output, @result)}
         </div>
       </li>
     </ul>

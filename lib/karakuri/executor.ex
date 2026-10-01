@@ -13,16 +13,26 @@ defmodule Karakuri.Executor do
         {enum_state, {status, executed_step}} =
           execute_step(workflow.name, workflow_step, executed_steps, args, pid)
 
+        notify_step_finished(pid, workflow.name, executed_step)
         {enum_state, {status, [executed_step | executed_steps]}}
       end)
 
-    send(pid, {:notify, :workflow_finished, workflow.name})
-    %Execution{workflow: workflow.name, status: status, steps: Enum.reverse(steps)}
+    output = final_output(workflow.output, steps, args)
+    send(pid, {:notify, :workflow_finished, workflow.name, output})
+
+    %Execution{
+      workflow: workflow.name,
+      status: status,
+      steps: Enum.reverse(steps),
+      output: output
+    }
   end
 
-  def extract_input(%WorkflowStep{input: input}, executed_steps, args) do
+  def extract_input(input, executed_steps, args) do
     {:ok,
      Enum.reduce(input, %{}, fn {key, value}, acc ->
+       {key, value}
+
        value =
          case value do
            {:args, field} ->
@@ -45,11 +55,11 @@ defmodule Karakuri.Executor do
   end
 
   defp execute_step(workflow_name, step, executed_steps, args, pid) do
-    with {:ok, input} <- extract_input(step, executed_steps, args),
+    with {:ok, input} <- extract_input(step.input, executed_steps, args),
          _msg <- notify_step_started(pid, workflow_name, step, input),
          # _ <- Process.sleep(500),
-         {:ok, current} <- execute_each(step, input),
-         _msg <- notfiy_step_finished(pid, workflow_name, current) do
+         {:ok, current} <- execute_each(step, input) do
+      # _msg <- notify_step_finished(pid, workflow_name, current) do
       {:cont, {:completed, current}}
     else
       {:error, %Step{} = current} ->
@@ -71,7 +81,7 @@ defmodule Karakuri.Executor do
     notify(pid, :step_started, workflow_name, execution_step)
   end
 
-  defp notfiy_step_finished(pid, workflow_name, executed_step) do
+  defp notify_step_finished(pid, workflow_name, executed_step) do
     notify(pid, :step_finished, workflow_name, executed_step)
   end
 
@@ -105,5 +115,12 @@ defmodule Karakuri.Executor do
 
   defp base_execution_step(step, input) do
     %Step{name: step.name, order: step.order, input: input}
+  end
+
+  defp final_output(workflow_output, executed_stpes, args) do
+    case extract_input(%{result: workflow_output}, executed_stpes, args) do
+      {:ok, %{result: result}} -> result
+      _ -> nil
+    end
   end
 end

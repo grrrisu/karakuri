@@ -53,12 +53,16 @@ defmodule KarakuriWeb.WorkflowLive.Show do
       <.reset_button />
       <.main_title>Workflow {Phoenix.Naming.humanize(@workflow.name)}</.main_title>
 
-      <.workflow_steps workflow_steps={@workflow.steps} execution={@execution}>
+      <.workflow_steps
+        workflow_steps={@workflow.steps}
+        execution={@execution}
+      >
         <:workflow_input>
           <.input_form workflow={@workflow} />
         </:workflow_input>
-        <:workflow_output>
-          <span class="text-gray-400">Result</span>
+        <:workflow_output :let={result}>
+          <label class="text-gray-500">Result:</label>
+          <span>{result}</span>
         </:workflow_output>
       </.workflow_steps>
     </Layouts.app>
@@ -86,9 +90,12 @@ defmodule KarakuriWeb.WorkflowLive.Show do
             name={@key}
             placeholder={@placeholder}
             value=""
+            tabindex="1"
           />
         </div>
-        <.button>Start</.button>
+        <.button tabindex="2  ">
+          <.icon name="hero-play" class="size-4" /> Start
+        </.button>
       </div>
     </form>
     """

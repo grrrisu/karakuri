@@ -99,12 +99,7 @@ defmodule Karakuri.Server do
   end
 
   def handle_info({:notify, :step_started, workflow_name, step}, state) do
-    Phoenix.PubSub.broadcast(
-      Karakuri.PubSub,
-      "execution_event",
-      {:notify, :step_started, workflow_name, step}
-    )
-
+    broadcast_execution_event(:step_started, workflow_name, step)
     execution = Map.get(state.executions, workflow_name)
     execution = %{execution | steps: execution.steps ++ [step]}
 
@@ -112,20 +107,15 @@ defmodule Karakuri.Server do
   end
 
   def handle_info({:notify, :step_finished, workflow_name, step}, state) do
-    Phoenix.PubSub.broadcast(
-      Karakuri.PubSub,
-      "execution_event",
-      {:notify, :step_finished, workflow_name, step}
-    )
-
+    broadcast_execution_event(:step_finished, workflow_name, step)
     execution = Map.get(state.executions, workflow_name)
     execution = %{execution | steps: List.replace_at(execution.steps, -1, step)}
 
     {:noreply, %{state | executions: Map.put(state.executions, workflow_name, execution)}}
   end
 
-  def handle_info({:notify, :workflow_finished, _workflow_name}, state) do
-    # dbg("workflow finished #{workflow_name}")
+  def handle_info({:notify, :workflow_finished, workflow_name, output}, state) do
+    broadcast_execution_event(:workflow_finished, workflow_name, output)
     {:noreply, state}
   end
 
@@ -145,5 +135,13 @@ defmodule Karakuri.Server do
   def handle_info(_msg, state) do
     # dbg(msg)
     {:noreply, state}
+  end
+
+  defp broadcast_execution_event(event, workflow_name, payload) do
+    Phoenix.PubSub.broadcast(
+      Karakuri.PubSub,
+      "execution_event",
+      {:notify, event, workflow_name, payload}
+    )
   end
 end

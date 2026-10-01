@@ -14,7 +14,7 @@ defmodule Karakuri.Executor.ExecutorTest do
       input: %{text: {:args, :text}, pattern: ~r/\d+/}
     }
 
-    workflow = %Workflow{name: "test", steps: [step]}
+    workflow = %Workflow{name: "test", steps: [step], output: {:ref, "one", :match}}
     {:ok, workflow: workflow}
   end
 
@@ -24,7 +24,7 @@ defmodule Karakuri.Executor.ExecutorTest do
       args = %{text: "The answer is 42"}
 
       assert {:ok, %{text: "literal", var: "a_value"}} ==
-               Executor.extract_input(%WorkflowStep{input: input}, [], args)
+               Executor.extract_input(input, [], args)
     end
 
     test "extract input from args" do
@@ -35,7 +35,7 @@ defmodule Karakuri.Executor.ExecutorTest do
               %{
                 text: "The answer is 42",
                 var: "a_value"
-              }} == Executor.extract_input(%WorkflowStep{input: input}, [], args)
+              }} == Executor.extract_input(input, [], args)
     end
 
     test "extract input from previous step" do
@@ -44,7 +44,7 @@ defmodule Karakuri.Executor.ExecutorTest do
       steps = [%ExecutionStep{name: "step1", output: %{match: "42"}}]
 
       assert {:ok, %{text: "42", var: "a_value"}} ==
-               Executor.extract_input(%WorkflowStep{input: input}, steps, args)
+               Executor.extract_input(input, steps, args)
     end
 
     test "extract input returns a failed step when the referenced step is not found" do
@@ -53,7 +53,7 @@ defmodule Karakuri.Executor.ExecutorTest do
 
       assert {:error,
               {:input_error, "** (KeyError) Bad reference: Step nonexistent_step not found"}} ==
-               Executor.extract_input(%WorkflowStep{input: input}, [], args)
+               Executor.extract_input(input, [], args)
     end
   end
 
@@ -66,6 +66,7 @@ defmodule Karakuri.Executor.ExecutorTest do
       execution = Executor.execute(workflow, %{text: "The answer is 42"})
       assert execution.status == :completed
       last_step = List.last(execution.steps)
+      assert execution.output == "42"
       assert last_step.output.match == "42"
       assert last_step.status == :completed
     end
@@ -74,6 +75,7 @@ defmodule Karakuri.Executor.ExecutorTest do
       execution = Executor.execute(workflow, %{text: "No numbers here"})
       assert execution.status == :failed
       last_step = List.last(execution.steps)
+      assert execution.output == nil
       assert last_step.error == {:tool_result, "no match"}
       assert last_step.status == :failed
     end
@@ -82,6 +84,7 @@ defmodule Karakuri.Executor.ExecutorTest do
       execution = Executor.execute(workflow, %{text: nil})
       assert execution.status == :failed
       last_step = List.last(execution.steps)
+      assert execution.output == nil
       assert {:tool_error, _} = last_step.error
       assert last_step.status == :failed
     end
@@ -100,6 +103,7 @@ defmodule Karakuri.Executor.ExecutorTest do
 
       execution = Executor.execute(workflow, %{})
 
+      assert execution.output == nil
       assert execution.status == :failed
       assert [step] = execution.steps
       assert step.status == :failed
@@ -133,7 +137,12 @@ defmodule Karakuri.Executor.ExecutorTest do
         input: %{text: {:ref, "quote", :match}, pattern: ~r/\d+/}
       }
 
-      workflow = %Workflow{name: "test", steps: [step1, step2, step3]}
+      workflow = %Workflow{
+        name: "test",
+        steps: [step1, step2, step3],
+        output: {:ref, "number", :match}
+      }
+
       execution = Executor.execute(workflow, %{text: text})
 
       step_1 = Enum.at(execution.steps, 0)
@@ -151,6 +160,7 @@ defmodule Karakuri.Executor.ExecutorTest do
       assert step_3.status == :completed
       assert step_3.output.match == "42"
 
+      assert execution.output == "42"
       assert execution.status == :completed
     end
 
@@ -158,7 +168,7 @@ defmodule Karakuri.Executor.ExecutorTest do
       Executor.execute(workflow, %{text: "The answer is 42"})
       assert_received {:notify, :step_started, "test", %ExecutionStep{}}
       assert_received {:notify, :step_finished, "test", %ExecutionStep{}}
-      assert_received {:notify, :workflow_finished, "test"}
+      assert_received {:notify, :workflow_finished, "test", "42"}
     end
   end
 end

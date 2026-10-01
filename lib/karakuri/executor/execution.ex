@@ -1,5 +1,5 @@
 defmodule Karakuri.Executor.Execution do
-  defstruct workflow: nil, status: :pending, steps: []
+  defstruct workflow: nil, status: :pending, steps: [], output: nil
 
   defmodule Step do
     @type state :: :pending | :running | :completed | :failed
