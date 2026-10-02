@@ -30,13 +30,29 @@ defmodule KarakuriWeb.WorkflowLive.Show do
     input_key = socket.assigns.workflow.input || :input
     input = Map.get(params, input_key |> Atom.to_string())
     Server.start_workflow(workflow_name, %{input_key => input})
-    socket = put_flash(socket, :info, "Workflow #{workflow_name} started")
+
+    socket =
+      socket
+      |> flash_notfication(:workflow_started, workflow_name)
+      |> assign(workflow_name: workflow_name)
+
+    {:noreply, socket}
+  end
+
+  def handle_info(
+        {:notify, notification, workflow_name, _step},
+        %{assigns: %{workflow_name: workflow_name}} = socket
+      ) do
+    socket =
+      socket
+      |> assign_workflow_and_its_lastest_execution(workflow_name)
+      |> flash_notfication(notification, workflow_name)
 
     {:noreply, socket}
   end
 
   def handle_info({:notify, _notification, workflow_name, _step}, socket) do
-    socket = assign_workflow_and_its_lastest_execution(socket, workflow_name)
+    dbg("Received notification from another workflow: #{workflow_name}")
     {:noreply, socket}
   end
 
@@ -45,6 +61,15 @@ defmodule KarakuriWeb.WorkflowLive.Show do
       workflow: Server.get_workflow(workflow_name),
       execution: Server.get_last_execution(workflow_name)
     )
+  end
+
+  defp flash_notfication(socket, notification, workflow_name) do
+    case notification do
+      :workflow_started -> put_flash(socket, :info, "Workflow #{workflow_name} started")
+      :workflow_finished -> put_flash(socket, :info, "Workflow #{workflow_name} finished")
+      :workflow_failed -> put_flash(socket, :error, "Workflow #{workflow_name} failed")
+      _ -> socket
+    end
   end
 
   def render(assigns) do

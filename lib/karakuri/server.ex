@@ -38,7 +38,7 @@ defmodule Karakuri.Server do
   end
 
   def init(:ok) do
-    state = %{execution_ref: nil}
+    state = %{execution_ref: nil, execution_workflow: nil}
     {:ok, Map.merge(state, set_examples())}
   end
 
@@ -66,6 +66,7 @@ defmodule Karakuri.Server do
      %{
        state
        | execution_ref: task.ref,
+         execution_workflow: workflow.name,
          executions: Map.put(state.executions, workflow.name, execution)
      }}
   end
@@ -116,20 +117,25 @@ defmodule Karakuri.Server do
 
   def handle_info({:notify, :workflow_finished, workflow_name, output}, state) do
     broadcast_execution_event(:workflow_finished, workflow_name, output)
+    execution = Map.get(state.executions, workflow_name)
+    execution = %{execution | output: output}
+    state = %{state | executions: Map.put(state.executions, workflow_name, execution)}
     {:noreply, state}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{execution_ref: ref} = state)
       when reason != :normal do
-    # TODO execution failed
-    dbg("DOWN received for execution_ref: #{inspect(ref)}: #{inspect(reason)}")
-    {:noreply, %{state | execution_ref: nil}}
+    broadcast_execution_event(:workflow_failed, state.execution_workflow, reason)
+    execution = Map.get(state.executions, state.execution_workflow)
+    execution = %{execution | status: :failed}
+    state = %{state | executions: Map.put(state.executions, execution.workflow, execution)}
+    {:noreply, %{state | execution_ref: nil, execution_workflow: nil}}
   end
 
   def handle_info({ref, execution}, %{execution_ref: ref} = state) do
     # dbg("Received execution result for execution_ref: #{inspect(ref)}: #{inspect(execution)}")
     state = %{state | executions: Map.put(state.executions, execution.workflow, execution)}
-    {:noreply, %{state | execution_ref: nil}}
+    {:noreply, %{state | execution_ref: nil, execution_workflow: nil}}
   end
 
   def handle_info(_msg, state) do
