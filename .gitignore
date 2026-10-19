@@ -35,4 +35,4 @@ karakuri-*.tar
 npm-debug.log
 /assets/node_modules/
 
-/.vscode/
+.DS_Store
