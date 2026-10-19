@@ -1,5 +1,6 @@
 defmodule Karakuri.Designer.Session do
   defstruct [
+    :id,
     # from the form
     :requirement,
     # %{"text" => "The answer is 42"}

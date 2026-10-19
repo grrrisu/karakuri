@@ -48,6 +48,6 @@ Available tools:
 
 Example step:
 { "name": "find_number", "tool": "regex@1",
-  "input": { "text": "{args.text}", "pattern": "\\d+" } }
+  "input": { "text": ["args", "text"], "pattern": "\\d+" } }
 
 Reply with JSON only.

@@ -10,6 +10,7 @@ defmodule Karakuri.Application do
     children = [
       {Task.Supervisor, name: Karakuri.Executor.TaskSupervisor},
       Karakuri.Server,
+      Karakuri.Designer.Registry,
       KarakuriWeb.Telemetry,
       Karakuri.Repo,
       {DNSCluster, query: Application.get_env(:karakuri, :dns_cluster_query) || :ignore},
