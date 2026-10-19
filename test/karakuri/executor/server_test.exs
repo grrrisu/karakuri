@@ -1,7 +1,7 @@
-defmodule Karakuri.ServerTest do
+defmodule Karakuri.Executor.ServerTest do
   use ExUnit.Case, async: false
 
-  alias Karakuri.Server
+  alias Karakuri.Executor.Server
 
   setup do
     Phoenix.PubSub.subscribe(Karakuri.PubSub, "execution_event")

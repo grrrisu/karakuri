@@ -20,7 +20,8 @@ Independence from the designer is not the same as "no external calls." A tool ma
 | `Karakuri.Executor.Tool.*` | The tools. Today only `Tool.Regex`. |
 | `Karakuri.Toolbox` | The catalog: tool key, description, params, output fields, example. |
 | `Karakuri.Compiler` | Spec JSON → `%Workflow{}`. Currently a stub (`Jason.decode/1`). |
-| `Karakuri.Server` | In-memory store + run orchestration. Owns PubSub. |
+| `Karakuri.Designer` | Design-time context, not part of the executor. `run/2` compiles a spec and dry-runs it on the sample; its agent-facing functions are exposed to the Jido agent as tools. Only dry runs — never saves or runs a stored workflow. |
+| `Karakuri.Executor.Server` | In-memory workflow store + run orchestration. Broadcasts on `"execution_event"`. Knows nothing about the designer — design sessions live in `Karakuri.Designer.Registry`. |
 | `KarakuriWeb.WorkflowLive.*` | Index and Show, plus shared components. |
 
 Definition vs record: `%Workflow.Step{}` says what *should* happen, `%Execution.Step{}` records what *did*. They share `name`, and that is how the UI zips them together.
@@ -44,6 +45,15 @@ A step's `input` map holds literals or refs:
 - anything else — a literal, passed through
 
 `extract_input/3` resolves these against the already-executed steps. Refs can only point backwards, because only completed steps are in scope. The workflow's `output` is resolved the same way.
+
+In spec JSON the same refs are lists, and the compiler turns them into the tuples above:
+
+| JSON | Executor |
+| --- | --- |
+| `["args", "text"]` | `{:args, "text"}` |
+| `["ref", "find_total", "match"]` | `{:ref, "find_total", :match}` — field name looked up in the catalog, never `String.to_atom` |
+
+The executor only ever sees tuples. Don't teach it to understand the list form; that's the compiler's job.
 
 **Arg names:** today they are atoms (`{:args, :text}`, `%Workflow{input: :text}`). Once the compiler exists they become strings (`{:args, "text"}`), because they come from the model. Step names are already strings; output field names come from the catalog and stay atoms.
 
@@ -94,7 +104,9 @@ Same contract, plus: a timeout and retry-on-transient inside the tool; a stable 
 
 ## Rules that are easy to break
 
-**No `Phoenix.*`, `KarakuriWeb` or designer modules in the executor.** Broadcasting from the interpreter is the natural move under time pressure and it's wrong: the executor stays runnable from `iex` with nothing else started. Notify the pid; `Server` decides what that means.
+**No `Phoenix.*`, `KarakuriWeb`, `Jido` or designer modules in the executor** — meaning the interpreter and its data (`Karakuri.Executor`, `Workflow`, `Execution`, `Tool.*`). `Karakuri.Executor.Server` is the exception that uses PubSub; nothing else under `Executor` may. Broadcasting from the interpreter is the natural move under time pressure and it's wrong: the executor stays runnable from `iex` with nothing else started. Notify the pid; `Server` decides what that means. Jido is the designer's agent framework; it can run action pipelines too, but saved workflows always run on our interpreter.
+
+**The designer calls the executor, never the other way round.** `Designer.run/2` compiles a spec and dry-runs it with `Executor.execute/3`. That's the only coupling, and it points one way.
 
 **No agent in the executor.** No planner choosing the next step, no model interpreting the definition. Control flow comes from the definition, always.
 

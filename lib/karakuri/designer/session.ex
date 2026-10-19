@@ -1,8 +1,13 @@
 defmodule Karakuri.Designer.Session do
   defstruct [
+    :id,
+    # the task that started the agent
+    :agent_task,
+    # pid for the running Jido agent
+    :agent_pid,
     # from the form
     :requirement,
-    # %{"text" => "The answer is 42"}
+    # "The answer is 42"
     :sample,
     # completed, failed (eg. too many attempts), impossible, drafting, compiling, testing
     :status,

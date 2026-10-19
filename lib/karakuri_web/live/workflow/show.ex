@@ -1,7 +1,7 @@
 defmodule KarakuriWeb.WorkflowLive.Show do
   use KarakuriWeb, :live_view
 
-  alias Karakuri.Server
+  alias Karakuri.Executor.Server
   import KarakuriWeb.WorkflowLive.Components
 
   def mount(_params, _session, socket) do

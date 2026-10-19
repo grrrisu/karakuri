@@ -1,4 +1,4 @@
-defmodule Karakuri.Server do
+defmodule Karakuri.Executor.Server do
   use GenServer
 
   alias Karakuri.Executor.Workflow
