@@ -2,28 +2,34 @@ defmodule Karakuri.DesignerTest do
   use ExUnit.Case
 
   alias Karakuri.Designer
-  alias Karakuri.Workflows
-  alias Karakuri.Executor
+  alias Karakuri.Designer.Session
+  alias Karakuri.Designer.Registry
 
-  @prompt "Design a workflow that calculates the answer to life, the universe, and everything."
+  @requirement "Calculate the answer to life, the universe, and everything."
+  @sample %{text: "And the answer is 42."} |> Jason.encode!()
 
-  test "generates JSON with argument and output references" do
-    assert {:ok, json} = Designer.generate(@prompt)
-    assert {:ok, definition} = Jason.decode(json)
+  setup do
+    sessions = %{
+      "test" => %Session{
+        id: "test",
+        status: :drafting,
+        requirement: @requirement,
+        sample: @sample
+      }
+    }
 
-    assert definition["input"] == "text"
-    assert definition["output"] == ["ref", "the_answer", "match"]
-    assert [step] = definition["steps"]
-    assert step["input"]["text"] == ["args", "text"]
-    assert step["input"]["pattern"] == "\\d+"
+    registry = start_supervised!({Registry, sessions: sessions, name: DesignerTest})
+    %{registry: registry}
   end
 
-  test "designs, compiles and runs a workflow from a prompt" do
-    {:ok, json} = Designer.generate(@prompt)
-    {:ok, workflow} = Workflows.compile(json)
-    execution = Executor.execute(workflow, @sample)
+  test "starts a new designer session", %{registry: registry} do
+    assert {:ok, session} = Designer.start_session(@requirement, @sample, registry)
+    assert session.requirement == @requirement
+    assert session.sample == @sample
+    assert session.status == :drafting
+  end
 
-    assert execution.status == :completed
-    assert execution.output == "42"
+  test "check workflow", %{registry: registry} do
+    Designer.check_workflow("test", "{}", registry)
   end
 end

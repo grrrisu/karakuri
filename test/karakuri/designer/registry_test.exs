@@ -5,7 +5,7 @@ defmodule Karakuri.Designer.RegistryTest do
   alias Karakuri.Designer.Session
 
   @requirement "Find the answer to life"
-  @sample %{"text" => "The answer is 42"}
+  @sample "The answer is 42"
 
   setup do
     registry = start_supervised!({Registry, name: nil})
@@ -13,7 +13,9 @@ defmodule Karakuri.Designer.RegistryTest do
   end
 
   describe "create_session/3" do
-    test "creates a drafting session with a generated id", %{registry: registry} do
+    test "creates a drafting session with a generated id and starts an agent", %{
+      registry: registry
+    } do
       assert {:ok, %Session{} = session} =
                Registry.create_session(registry, @requirement, @sample)
 
@@ -22,7 +24,14 @@ defmodule Karakuri.Designer.RegistryTest do
       assert session.sample == @sample
       assert session.status == :drafting
       assert session.attempts == 0
-      assert {:ok, ^session} = Registry.get_session(registry, session.id)
+      assert %Task{} = session.agent_task
+      assert is_pid(session.agent_pid)
+
+      # Give the agent task some time to complete
+      Process.sleep(100)
+      assert {:ok, stored} = Registry.get_session(registry, session.id)
+      assert stored.id == session.id
+      assert stored.status == :completed
     end
 
     test "generates unique ids", %{registry: registry} do
@@ -70,7 +79,10 @@ defmodule Karakuri.Designer.RegistryTest do
       assert {:error, :invalid_update} =
                Registry.get_and_update(registry, session.id, &%{&1 | id: "x"})
 
-      assert {:ok, ^session} = Registry.get_session(registry, session.id)
+      assert {:ok, stored} = Registry.get_session(registry, session.id)
+      assert stored.id == session.id
+      assert stored.requirement == session.requirement
+      assert stored.sample == session.sample
     end
   end
 end

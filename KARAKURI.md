@@ -46,7 +46,7 @@ requirement + sample                                  │
                      human review → Save ─────────────┼──► Executor.execute ──► %Execution{}
 ```
 
-One Elixir/Phoenix application. The separation is architectural, not deployment: nothing in the executor references `Phoenix.*`, `KarakuriWeb`, `Jido` or any designer module. The executor runs from `iex` with nothing else started.
+One Elixir/Phoenix application. The separation is architectural, not deployment: nothing in the executor references `Phoenix.*`, `KarakuriWeb`, `Jido` or any designer module. "The executor" here means the interpreter and its data: `Karakuri.Executor`, `Executor.Workflow`, `Executor.Execution`, `Executor.Tool.*`. `Karakuri.Executor.Server` lives in the namespace but is the orchestration *around* it and does use PubSub — see TODO.md, decision 6. The executor runs from `iex` with nothing else started.
 
 | Part | Role |
 | --- | --- |
@@ -55,7 +55,8 @@ One Elixir/Phoenix application. The separation is architectural, not deployment:
 | `Karakuri.Toolbox` | The tool catalog. The single source for both compiler and designer prompt. |
 | `Karakuri.Designer` | Design-time context: `run/2` (compile + dry run, no model), the session, and the agent-facing tool functions. |
 | Designer agent (Jido) | ReAct agent. Models and tests its own workflow through `Designer` tools. |
-| `Karakuri.Server` | In-memory store, run orchestration, PubSub broadcast. |
+| `Karakuri.Executor.Server` | Run time: workflow store, executions, run orchestration, broadcasts on `"execution_event"`. |
+| `Karakuri.Designer.Registry` | Design time: sessions by id, starts and monitors agent tasks, broadcasts on `"design:<id>"`. |
 | `KarakuriWeb` | LiveView UI. |
 
 **Jido is design-time only.** It drives the model; it never runs a saved workflow. Jido can also run deterministic action pipelines, which makes it tempting as the executor — but then "the executor has no agent" becomes a claim about how Jido is configured instead of a property of 40 lines we own.
@@ -122,14 +123,19 @@ The agent is given the executor infrastructure through a small set of tools and 
 ```
 Karakuri.Designer                    public API
   run(spec, sample)                  terms in, terms out — compile + dry run, knows nothing about agents
-  start_design(requirement, sample)  creates the session, starts the agent task
+  start_session(requirement, sample) creates the session, starts the agent task
   check_workflow(session_id, spec)   ┐
   submit_workflow(session_id, spec)  ├ agent-facing: session-bound, JSON-shaped in and out
   report_impossible(session_id, …)   ┘
+  save_workflow(session_id)          human Save → Karakuri.Executor.Server.put_workflow
+
+Karakuri.Designer.Registry             GenServer: sessions by id, agent tasks, "design:<id>" broadcasts
 
 Karakuri.Designer.Session            struct: requirement, sample, check budget, attempts, outcome
 Karakuri.Designer.Report             %Execution{} / compiler errors → JSON-shaped maps for the model (truncation lives here)
 Karakuri.Designer.Agent              the Jido agent: model, system prompt, tool list
+Karakuri.Designer.Agent.MockAgent    scripted stand-in (test, and dev without burning tokens) — see below
+Karakuri.Designer.Agent.Behaviour    ask_stream/2, await/2: what the Registry's task needs from either
 Karakuri.Designer.Actions.*          one Jido.Action per agent-facing function, a few lines each
 ```
 
@@ -155,32 +161,46 @@ The catalog and the spec rules go into the system prompt rather than a `list_too
 
 ```
  1. WorkflowLive.submit(requirement, sample)
-      → Server.create_session(requirement, sample)            returns session_id; session holds sample + check budget
-      → Server starts a design Task under a supervisor, monitors it  (never ask_sync inside the Server — see below)
+      → Designer.start_session → Designer.Registry.create_session            returns session_id; session holds sample + check budget
+      → Designer.Registry starts a design Task, monitors it  (never ask_sync inside it — see below)
  2. design Task: Jido.AgentServer.start(agent, state: %{session_id: id})
                  Agent.ask_stream(pid, prompt)                 prompt = requirement + sample text
-                 for each event → notify Server → broadcast "design:<id>" {:agent_event, …}   (see "Seeing what the agent does")
+                 for each event → notify Designer.Registry → broadcast "design:<id>" {:agent_event, …}   (see "Seeing what the agent does")
  3. ┌ agent → check_workflow(spec)
     │   → Designer.check_workflow(session_id, spec)
-    │       → Server: spend one check from the budget
+    │       → Designer.Registry: spend one check from the budget
     │       → Designer.run(spec, session.sample)
     │            → Compiler.compile(spec)                      {:error, [msg]} → back to the agent
     │            → Executor.execute(workflow, %{workflow.input => sample})
-    │       → Server: record attempt, then broadcast "design:<id>" {:checked, n, result}
+    │       → Designer.Registry: record attempt, then broadcast "design:<id>" {:checked, n, result}
     │   ← JSON result to the agent
     └ agent loops as it sees fit
  4. agent → submit_workflow(spec)
       → Designer.submit_workflow(session_id, spec)
           → Designer.run again (the gate)
-          → Server: session := completed(workflow, execution), then broadcast "design:<id>" :completed
+          → Designer.Registry: session := completed(workflow, execution), then broadcast "design:<id>" :completed
       ← {accepted: true} — the agent writes a final message and its process ends
- 5. Server sees the agent exit.  Session still open → mark failed (budget spent, crash, gave up), broadcast.
- 6. WorkflowLive shows extracted values.  Human clicks Save → Server.save_workflow(session_id) → put_workflow.
+ 5. Designer.Registry sees the agent exit.  Session still open → mark failed (budget spent, crash, gave up), broadcast.
+ 6. WorkflowLive shows extracted values.  Human clicks Save → Designer.save_workflow(session_id) → Karakuri.Executor.Server.put_workflow.
 ```
+
+### The mock agent
+
+Selected by `config :karakuri, designer_agent_module:` — the mock in test and dev, the Jido agent otherwise.
+
+It is only useful if it exercises *our* side the way the real agent does, so it is a **scripted agent**, not a list of canned events:
+
+- A script per scenario: `say(text)`, `call(:check_workflow, spec)`, `call(:submit_workflow, spec)`, `call(:report_impossible, …)`.
+- `call` really invokes the `Designer` function with the session id — budget, `run/2`, Registry updates and broadcasts all happen for real. Only the model is fake.
+- Around each step it emits the same event kinds the real stream does (`:llm_completed`, `:tool_started`, `:tool_completed`, …), with `data` shaped like the real thing once the spike has captured it.
+- The stream is **lazy** (`Stream.flat_map` / `Stream.resource` over the script), so tool calls happen while the Registry's task consumes the stream — interleaved, like the real agent — instead of all upfront.
+- Scenarios, chosen e.g. from the requirement text in dev: happy path (one failing check, one passing check, submit), impossible, budget exhausted, agent crash.
+
+What it does not cover: the `Jido.Action` wrappers and the prompt. Those are thin, and the spike covers them once.
 
 ### Seeing what the agent does
 
-The design Task drives the agent with `ask_stream/3` and consumes its `%Jido.AI.Reasoning.ReAct.Event{}` stream, forwarding a filtered subset to the Server, which broadcasts it like any other design event. The stream ends with `:request_completed`, `:request_failed` or `:request_cancelled`; then the Task calls `await/2` and exits.
+The design Task drives the agent with `ask_stream/3` and consumes its `%Jido.AI.Reasoning.ReAct.Event{}` stream, forwarding a filtered subset to `Designer.Registry`, which broadcasts it like any other design event. The stream ends with `:request_completed`, `:request_failed` or `:request_cancelled`; then the Task calls `await/2` and exits.
 
 | Event kind | UI |
 | --- | --- |
@@ -188,18 +208,20 @@ The design Task drives the agent with `ask_stream/3` and consumes its `%Jido.AI.
 | `:tool_started` | "checking draft 2…" |
 | `:tool_completed` | the check result — trace and errors, shown in the timeline component |
 | `:request_failed` / `:request_cancelled` | the reason, if the session is still open |
-| `:llm_delta` | **dropped** — one message per token would flood the Server and the socket. A "thinking…" indicator instead. |
+| `:llm_delta` | **dropped** — one message per token would flood `Designer.Registry` and the socket. A "thinking…" indicator instead. |
 
 Two kinds of event, two owners: **the stream is the narrative** (what the agent is doing, for the UI), **the session is the record** (checks spent, submitted workflow, outcome — written by `Designer`). The UI may show both; decisions are only ever made from the session.
 
 Why not the alternatives:
-- **`stream_to: {:pid, server}`** — no backpressure, straight into the Server's mailbox.
+- **`stream_to: {:pid, server}`** — no backpressure, straight into the server's mailbox.
 - **Jido signals** — jido_ai emits them, but the docs don't show subscribing to a running request's events through a signal bus, and it would be a second pub/sub beside Phoenix.PubSub.
 - **`Jido.AI.Observe` telemetry** — process-global handlers that detach on error; same reasons as for the executor.
 
+**Two servers, one direction.** `Designer.Registry` owns everything design-time; `Karakuri.Executor.Server` owns stored workflows and runs. The designer calls into the run-time side exactly once — `put_workflow` on Save. `Karakuri.Executor.Server` never references the designer, so the split is visible in the process tree as well as in the modules.
+
 **The agent's job ends at submit.** Human review happens after the agent is gone; it does not wait for the click. A rejected workflow starts a new session (later: with the rejection reason as extra input).
 
-**The Server never blocks on the agent.** The agent's tools call the Server to read and update the session; if the Server were sitting in `ask_sync`, the first tool call would deadlock.
+**`Designer.Registry` never blocks on the agent.** The agent's tools call it to read and update the session; if it were sitting in `ask_sync`, the first tool call would deadlock.
 
 **Update the session, then broadcast**, same rule as runs. Per-session topic `"design:<id>"`, so only the page that started the design listens.
 

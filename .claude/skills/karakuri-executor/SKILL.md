@@ -21,7 +21,7 @@ Independence from the designer is not the same as "no external calls." A tool ma
 | `Karakuri.Toolbox` | The catalog: tool key, description, params, output fields, example. |
 | `Karakuri.Compiler` | Spec JSON → `%Workflow{}`. Currently a stub (`Jason.decode/1`). |
 | `Karakuri.Designer` | Design-time context, not part of the executor. `run/2` compiles a spec and dry-runs it on the sample; its agent-facing functions are exposed to the Jido agent as tools. Only dry runs — never saves or runs a stored workflow. |
-| `Karakuri.Server` | In-memory store + run orchestration. Owns PubSub. |
+| `Karakuri.Executor.Server` | In-memory workflow store + run orchestration. Broadcasts on `"execution_event"`. Knows nothing about the designer — design sessions live in `Karakuri.Designer.Registry`. |
 | `KarakuriWeb.WorkflowLive.*` | Index and Show, plus shared components. |
 
 Definition vs record: `%Workflow.Step{}` says what *should* happen, `%Execution.Step{}` records what *did*. They share `name`, and that is how the UI zips them together.
@@ -104,7 +104,7 @@ Same contract, plus: a timeout and retry-on-transient inside the tool; a stable 
 
 ## Rules that are easy to break
 
-**No `Phoenix.*`, `KarakuriWeb`, `Jido` or designer modules in the executor.** Broadcasting from the interpreter is the natural move under time pressure and it's wrong: the executor stays runnable from `iex` with nothing else started. Notify the pid; `Server` decides what that means. Jido is the designer's agent framework; it can run action pipelines too, but saved workflows always run on our interpreter.
+**No `Phoenix.*`, `KarakuriWeb`, `Jido` or designer modules in the executor** — meaning the interpreter and its data (`Karakuri.Executor`, `Workflow`, `Execution`, `Tool.*`). `Karakuri.Executor.Server` is the exception that uses PubSub; nothing else under `Executor` may. Broadcasting from the interpreter is the natural move under time pressure and it's wrong: the executor stays runnable from `iex` with nothing else started. Notify the pid; `Server` decides what that means. Jido is the designer's agent framework; it can run action pipelines too, but saved workflows always run on our interpreter.
 
 **The designer calls the executor, never the other way round.** `Designer.run/2` compiles a spec and dry-runs it with `Executor.execute/3`. That's the only coupling, and it points one way.
 

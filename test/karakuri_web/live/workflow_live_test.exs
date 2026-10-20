@@ -3,7 +3,7 @@ defmodule KarakuriWeb.WorkflowLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Karakuri.Server
+  alias Karakuri.Executor.Server
 
   setup do
     Server.reset()

@@ -1,60 +1,78 @@
 defmodule Karakuri.Designer do
+  alias Karakuri.Designer.Registry
   alias Karakuri.Designer.Session
+  alias Karakuri.Designer.Compiler
 
+  alias Karakuri.Executor
   alias Karakuri.Executor.Workflow
 
   @max_attempts 3
 
-  def generate(requirement, sample) do
-    session = %Session{status: :drafting, attempts: 0, requirement: requirement, sample: sample}
+  def start_session(requirement, sample, registry \\ Registry) do
+    Registry.create_session(registry, requirement, sample)
+  end
 
-    case run(session) do
-      %Session{status: :completed, workflow: workflow} -> {:ok, workflow}
-      %Session{status: :failed} = failed_session -> {:error, failed_session}
-      %Session{status: :impossible} = impossible_session -> {:error, impossible_session}
-      %Session{status: _wip} = wip_session -> {:error, wip_session}
+  def check_workflow(session_id, json_spec, registry \\ Registry) do
+    {:ok, session} = Registry.get_session(registry, session_id)
+
+    {:ok, session} =
+      session
+      |> Map.put(:spec, json_spec)
+      |> run()
+      |> update_session(registry)
+
+    check_result(session)
+  end
+
+  def submit_workflow(_session_id) do
+    # Implementation for submitting the workflow
+  end
+
+  def report_impossible(_session_id) do
+    # Implementation for reporting an impossible workflow
+  end
+
+  defp check_result(session) do
+    case session do
+      %Session{status: :completed, workflow: workflow, execution: execution} ->
+        {:ok, workflow, execution}
+
+      %Session{status: :failed} = failed_session ->
+        {:error, failed_session}
+
+      %Session{status: :impossible} = impossible_session ->
+        {:error, impossible_session}
+
+      %Session{status: _wip} = wip_session ->
+        {:error, wip_session}
     end
   end
 
-  def run(%Session{status: status} = session) when status in [:completed, :failed, :impossible],
-    do: session
+  defp run(%Session{status: status, attempts: n} = session)
+       when status in [:completed, :failed, :impossible],
+       do: %Session{session | attempts: n + 1}
 
-  def run(%Session{attempts: n} = session) when n >= @max_attempts,
-    do: %{session | status: :failed}
+  defp run(%Session{attempts: n} = session) when n >= @max_attempts,
+    do: %Session{session | status: :failed}
 
-  def run(%Session{status: :drafting} = session),
-    do: session |> draft() |> run() |> dbg(label: "after drafting")
+  defp run(%Session{status: :drafting} = session),
+    do: %Session{session | status: :compiling} |> run()
 
-  def run(%Session{status: :compiling} = session), do: session |> compile() |> run()
-  def run(%Session{status: :testing} = session), do: session |> test() |> run()
+  defp run(%Session{status: :compiling} = session), do: session |> compile() |> run()
+  defp run(%Session{status: :testing} = session), do: session |> test() |> run()
 
-  def draft(session) do
-    # Implementation for generating a workflow based on the prompt (requirement + sample)
-    # magic agent stuff happening
-
-    {:ok, json} =
-      %{
-        name: "the_answer_to_life",
-        input: "text",
-        output: ["ref", "the_answer", "match"],
-        steps: [
-          %{
-            name: "the_answer",
-            order: 0,
-            tool: "regex@1",
-            input: %{text: ["args", "text"], pattern: "\\d+"}
-          }
-        ]
-      }
-      |> Jason.encode()
-
-    %{session | status: :compiling, spec: json, workflow: nil}
+  # Compile the session into a workflow
+  defp compile(%Session{} = session) do
+    {:ok, _} = Compiler.compile(session.spec)
+    %Session{session | status: :testing, workflow: %Workflow{name: "the_answer_to_life"}}
   end
 
-  #
-  def compile(session),
-    do: %{session | status: :testing, workflow: %Workflow{name: "the_answer_to_life"}}
+  defp test(%Session{} = session) do
+    execution = Executor.execute(session.workflow, session.sample |> Jason.decode!())
+    %Session{session | status: execution.status, execution: execution}
+  end
 
-  def test(session),
-    do: %{session | status: :completed}
+  defp update_session(session, registry) do
+    Registry.get_and_update(registry, session.id, fn _ -> session end)
+  end
 end
