@@ -8,18 +8,18 @@ defmodule Karakuri.Designer do
 
   @max_attempts 3
 
-  def start_session(requirement, sample, registry \\ Registry) do
-    Registry.create_session(registry, requirement, sample)
+  def start_session(requirement, sample) do
+    Registry.create_session(requirement, sample)
   end
 
-  def check_workflow(session_id, json_spec, registry \\ Registry) do
-    {:ok, session} = Registry.get_session(registry, session_id)
+  def check_workflow(session_id, json_spec) do
+    {:ok, session} = Registry.get_session(session_id)
 
     {:ok, session} =
       session
       |> Map.put(:spec, json_spec)
       |> run()
-      |> update_session(registry)
+      |> update_session()
 
     check_result(session)
   end
@@ -72,7 +72,7 @@ defmodule Karakuri.Designer do
     %Session{session | status: execution.status, execution: execution}
   end
 
-  defp update_session(session, registry) do
-    Registry.get_and_update(registry, session.id, fn _ -> session end)
+  defp update_session(session) do
+    Registry.get_and_update(session.id, fn _ -> session end)
   end
 end

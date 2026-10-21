@@ -24,6 +24,11 @@ defmodule Karakuri.Designer.Registry do
     GenServer.call(server, {:get_session, id})
   end
 
+  @doc "Clears all sessions."
+  def clear(server \\ __MODULE__) do
+    GenServer.call(server, :clear)
+  end
+
   @doc """
   Finds the session, updates it and returns the updated session.
 
@@ -67,13 +72,14 @@ defmodule Karakuri.Designer.Registry do
     end
   end
 
-  @impl true
-  def handle_info({:designer_event, session_id, event}, sessions) do
-    {:noreply, update_session(sessions, session_id, &%{&1 | messages: &1.messages ++ [event]})}
-  end
+  def handle_call(:clear, _from, _sessions), do: {:reply, :ok, %{}}
 
+  @impl true
   def handle_info({_ref, session}, sessions) do
-    {:noreply, Map.put(sessions, session.id, session)}
+    {:noreply,
+     update_session(sessions, session.id, fn current ->
+       %{current | messages: session.messages, status: session.status, feedback: session.feedback}
+     end)}
   end
 
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, sessions), do: {:noreply, sessions}
@@ -162,6 +168,9 @@ defmodule Karakuri.Designer.Registry do
   end
 
   defp update_session(sessions, session_id, fun) do
-    Map.update(sessions, session_id, %Session{id: session_id}, fn session -> fun.(session) end)
+    case Map.fetch(sessions, session_id) do
+      {:ok, session} -> Map.put(sessions, session_id, fun.(session))
+      :error -> sessions
+    end
   end
 end

@@ -57,7 +57,8 @@ defmodule Karakuri.Designer.RegistryTest do
 
       assert updated.spec == "{}"
       assert updated.status == :compiling
-      assert {:ok, ^updated} = Registry.get_session(registry, session.id)
+      assert {:ok, stored} = Registry.get_session(registry, session.id)
+      assert stored.spec == "{}"
     end
 
     test "updates with a function", %{registry: registry, session: session} do
@@ -65,7 +66,13 @@ defmodule Karakuri.Designer.RegistryTest do
                Registry.get_and_update(registry, session.id, &%{&1 | attempts: &1.attempts + 1})
 
       assert updated.attempts == 1
-      assert {:ok, ^updated} = Registry.get_session(registry, session.id)
+      assert {:ok, stored} = Registry.get_session(registry, session.id)
+      assert stored.attempts == 1
+
+      send(registry, {make_ref(), session})
+
+      assert {:ok, stored} = Registry.get_session(registry, session.id)
+      assert stored.attempts == 1
     end
 
     test "returns not_found for an unknown id", %{registry: registry} do
@@ -83,6 +90,19 @@ defmodule Karakuri.Designer.RegistryTest do
       assert stored.id == session.id
       assert stored.requirement == session.requirement
       assert stored.sample == session.sample
+    end
+  end
+
+  describe "clear/1" do
+    test "removes all sessions and ignores late notifications", %{registry: registry} do
+      {:ok, session} = Registry.create_session(registry, @requirement, @sample)
+
+      assert :ok = Registry.clear(registry)
+      assert {:error, :not_found} = Registry.get_session(registry, session.id)
+
+      send(registry, {make_ref(), session})
+
+      assert {:error, :not_found} = Registry.get_session(registry, session.id)
     end
   end
 end
