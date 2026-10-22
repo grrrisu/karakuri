@@ -27,11 +27,21 @@ defmodule Karakuri.Designer.RegistryTest do
       assert %Task{} = session.agent_task
       assert is_pid(session.agent_pid)
 
-      # Give the agent task some time to complete
-      Process.sleep(100)
+      task_ref = Process.monitor(session.agent_task.pid)
+      assert_receive {:DOWN, ^task_ref, :process, _pid, :normal}, 5_000
+
       assert {:ok, stored} = Registry.get_session(registry, session.id)
       assert stored.id == session.id
       assert stored.status == :completed
+
+      assert Enum.map(stored.messages, & &1.kind) == [
+               :request_started,
+               :llm_started,
+               :request_completed
+             ]
+
+      assert stored.feedback == {:ok, ~s({"mocked":true})}
+      assert stored.agent_task == nil
     end
 
     test "generates unique ids", %{registry: registry} do

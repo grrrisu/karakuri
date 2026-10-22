@@ -4,8 +4,7 @@ defmodule Karakuri.Designer.Registry do
   """
   use GenServer
 
-  alias Karakuri.Designer.Agent, as: DesignerAgent
-  alias Karakuri.Designer.Jido
+  alias Karakuri.Designer.AgentTask
   alias Karakuri.Designer.Session
 
   def start_link(opts \\ []) do
@@ -50,7 +49,7 @@ defmodule Karakuri.Designer.Registry do
         sample: sample,
         status: :drafting
       }
-      |> start_agent_task()
+      |> AgentTask.start(self())
 
     {:reply, {:ok, session}, Map.put(sessions, session.id, session)}
   end
@@ -62,27 +61,56 @@ defmodule Karakuri.Designer.Registry do
     end
   end
 
-  def handle_call({:get_and_update, id, changes}, _from, sessions) do
-    with {:ok, session} <- Map.fetch(sessions, id),
-         {:ok, updated} <- apply_changes(session, changes) do
-      {:reply, {:ok, updated}, Map.put(sessions, id, updated)}
-    else
-      :error -> {:reply, {:error, :not_found}, sessions}
-      {:error, _reason} = error -> {:reply, error, sessions}
+  def handle_call({:get_and_update, session_id, changes}, _from, sessions) do
+    case update_session(sessions, session_id, changes) do
+      {:error, reason} -> {:reply, {:error, reason}, sessions}
+      {:ok, updated, sessions} -> {:reply, {:ok, updated}, sessions}
     end
   end
 
-  def handle_call(:clear, _from, _sessions), do: {:reply, :ok, %{}}
-
-  @impl true
-  def handle_info({_ref, session}, sessions) do
-    {:noreply,
-     update_session(sessions, session.id, fn current ->
-       %{current | messages: session.messages, status: session.status, feedback: session.feedback}
-     end)}
+  def handle_call(:clear, _from, sessions) do
+    shutdown_session_tasks(sessions)
+    {:reply, :ok, %{}}
   end
 
-  def handle_info({:DOWN, _ref, :process, _pid, _reason}, sessions), do: {:noreply, sessions}
+  @impl true
+  def terminate(_reason, sessions) do
+    shutdown_session_tasks(sessions)
+    :ok
+  end
+
+  @impl true
+  def handle_info({task_ref, _result}, sessions) do
+    {:noreply, clear_agent_task(sessions, task_ref)}
+  end
+
+  @impl true
+  def handle_info({:DOWN, task_ref, :process, _pid, _reason}, sessions) do
+    {:noreply, clear_agent_task(sessions, task_ref)}
+  end
+
+  defp update_session(sessions, session_id, changes) do
+    with {:ok, session} <- Map.fetch(sessions, session_id),
+         {:ok, updated} <- apply_changes(session, changes) do
+      {:ok, updated, Map.put(sessions, session_id, updated)}
+    else
+      :error -> {:error, :not_found}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp clear_agent_task(sessions, task_ref) do
+    session =
+      Enum.find_value(sessions, fn
+        {session_id, %Session{agent_task: %Task{ref: ^task_ref}}} -> session_id
+        _entry -> nil
+      end)
+
+    case session do
+      nil -> sessions
+      session_id -> Map.update!(sessions, session_id, &%{&1 | agent_task: nil})
+    end
+  end
 
   defp apply_changes(session, fun) when is_function(fun, 1) do
     case fun.(session) do
@@ -101,76 +129,10 @@ defmodule Karakuri.Designer.Registry do
     KeyError -> {:error, :invalid_update}
   end
 
-  defp start_agent_task(session) do
-    session = start_agent(session)
-
-    task =
-      Task.Supervisor.async_nolink(Karakuri.Designer.TaskSupervisor, fn ->
-        case agent_module().ask_stream(session.agent_pid, generate_prompt(session)) do
-          {:ok, %{request: request, events: events}} ->
-            session = %{session | messages: events}
-
-            agent_module().await(request, timeout: 60_000)
-            |> agent_result(session)
-
-          {:error, reason} ->
-            agent_task_finished(session, {:error, reason})
-        end
-      end)
-
-    Map.put(session, :agent_task, task)
-  end
-
-  defp agent_result(response, session) do
-    case response do
-      {:ok, result} ->
-        agent_task_finished(session, {:ok, result})
-
-      {:error, reason} ->
-        agent_task_finished(session, {:error, reason})
-    end
-  end
-
-  defp agent_module do
-    Application.get_env(:karakuri, :designer_agent_module, Karakuri.Designer.Agent)
-  end
-
-  def start_agent(session) do
-    if agent_module().mocked?() do
-      Map.put(session, :agent_pid, self())
-    else
-      agent_id = "designer-#{System.unique_integer([:positive])}"
-      {:ok, pid} = Jido.start_agent(DesignerAgent, id: agent_id)
-      Map.put(session, :agent_pid, pid)
-    end
-  end
-
-  def agent_task_finished(session, result) do
-    status =
-      case result do
-        {:ok, _} -> :completed
-        {:error, _} -> :failed
-        _ -> :drafting
-      end
-
-    %{session | status: status, feedback: result}
-  end
-
-  defp generate_prompt(session) do
-    """
-    <requirement>
-    #{session.requirement}
-    </requirement>
-    <sample_input>
-    #{session.sample}
-    </sample_input>
-    """
-  end
-
-  defp update_session(sessions, session_id, fun) do
-    case Map.fetch(sessions, session_id) do
-      {:ok, session} -> Map.put(sessions, session_id, fun.(session))
-      :error -> sessions
-    end
+  defp shutdown_session_tasks(sessions) do
+    Enum.each(sessions, fn
+      {_id, %Session{agent_task: %Task{} = task}} -> Task.shutdown(task, :brutal_kill)
+      _entry -> :ok
+    end)
   end
 end
