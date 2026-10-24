@@ -1,5 +1,5 @@
 defmodule Karakuri.Designer.Agent.Behaviour do
-  @callback ask_stream(pid :: pid(), message :: String.t()) ::
+  @callback ask_stream(pid :: pid(), message :: String.t(), opts :: keyword()) ::
               {:ok, %{request: struct(), events: Enumerable.t()}} | {:error, term()}
 
   @callback await(request :: struct(), opts :: keyword()) ::

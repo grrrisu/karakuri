@@ -8,7 +8,7 @@ defmodule Karakuri.Designer.AgentTask do
 
     task =
       Task.Supervisor.async_nolink(Karakuri.Designer.TaskSupervisor, fn ->
-        case agent_module().ask_stream(session.agent_pid, generate_prompt(session)) do
+        case ask_stream(session) do
           {:ok, %{request: request, events: events}} ->
             session = update_session_events(registry, session, events)
 
@@ -31,6 +31,12 @@ defmodule Karakuri.Designer.AgentTask do
       {:ok, pid} = Jido.start_agent(DesignerAgent, id: agent_id)
       Map.put(session, :agent_pid, pid)
     end
+  end
+
+  def ask_stream(session) do
+    agent_module().ask_stream(session.agent_pid, generate_prompt(session),
+      tool_context: %{session_id: session.id}
+    )
   end
 
   defp update_session_events(registry, session, events) do
