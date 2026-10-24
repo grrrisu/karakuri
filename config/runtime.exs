@@ -1,4 +1,22 @@
 import Config
+import Dotenvy
+
+# Real environment variables take precedence over values in .env files.
+env_dir = Path.expand("..", __DIR__)
+
+source!([
+  Path.join(env_dir, ".env"),
+  Path.join(env_dir, ".env.#{config_env()}"),
+  System.get_env()
+])
+
+config :req_llm, :anthropic_api_key, env!("ANTHROPIC_API_KEY", :string, nil)
+
+if env!("MOCK_AGENT", :string, nil) do
+  config :karakuri, :designer_agent_module, Karakuri.Designer.Agent.MockAgent
+else
+  config :karakuri, :designer_agent_module, Karakuri.Designer.Agent
+end
 
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
@@ -67,6 +85,9 @@ if config_env() == :prod do
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
     ],
     secret_key_base: secret_key_base
+
+  config :req_llm,
+    anthropic_api_key: System.get_env("ANTHROPIC_API_KEY")
 
   # ## SSL Support
   #

@@ -5,7 +5,7 @@ defmodule Karakuri.Designer.Agent do
 
   use Jido.AI.Agent,
     name: "designer_agent",
-    model: :capable,
+    model: :fast,
     description: "Designer agent for creating workflows and tasks.",
     tools: [CheckWorkflow],
     system_prompt: """

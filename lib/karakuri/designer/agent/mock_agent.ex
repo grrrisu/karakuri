@@ -16,7 +16,7 @@ defmodule Karakuri.Designer.Agent.MockAgent do
     request = %{id: "mock-request-#{System.unique_integer([:positive])}", status: :pending}
 
     # TODO simulate tool calls
-    result = CheckWorkflow.run(%{spec: "the json spec"}, %{session_id: session_id})
+    _result = CheckWorkflow.run(%{spec: "the json spec"}, %{session_id: session_id})
 
     events = [
       %{
