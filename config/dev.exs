@@ -91,4 +91,10 @@ config :phoenix_live_view,
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
 
-config :karakuri, designer_agent_module: Karakuri.Designer.Agent.MockAgent
+# config :karakuri, designer_agent_module: Karakuri.Designer.Agent.MockAgent
+
+config :jido_ai,
+  model_aliases: %{
+    fast: "anthropic:claude-haiku-5-5",
+    capable: "anthropic:claude-sonnet-5-5"
+  }

@@ -1,6 +1,8 @@
 defmodule Karakuri.Designer.Agent.MockAgent do
   @behaviour Karakuri.Designer.Agent.Behaviour
 
+  alias Karakuri.Designer.Actions.CheckWorkflow
+
   @result %{mocked: true} |> Jason.encode!()
 
   # :llm_completed: the agent’s text between tool calls.
@@ -9,10 +11,12 @@ defmodule Karakuri.Designer.Agent.MockAgent do
   # :request_failed
 
   @impl true
-  def ask_stream(_pid, message) do
+  def ask_stream(_pid, message, opts \\ []) do
+    session_id = Keyword.get(opts, :tool_context, %{}) |> Map.get(:session_id)
     request = %{id: "mock-request-#{System.unique_integer([:positive])}", status: :pending}
 
     # TODO simulate tool calls
+    _result = CheckWorkflow.run(%{spec: "the json spec"}, %{session_id: session_id})
 
     events = [
       %{

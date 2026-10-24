@@ -1,11 +1,13 @@
 defmodule Karakuri.Designer.Agent do
   @behaviour Karakuri.Designer.Agent.Behaviour
 
+  alias Karakuri.Designer.Actions.CheckWorkflow
+
   use Jido.AI.Agent,
     name: "designer_agent",
-    model: :capable,
+    model: :fast,
     description: "Designer agent for creating workflows and tasks.",
-    tools: [],
+    tools: [CheckWorkflow],
     system_prompt: """
     You produce workflow definitions as JSON. A workflow is a named list of steps.
     Each step calls one tool. A step's input values are either literals or refs.

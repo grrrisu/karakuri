@@ -5,7 +5,7 @@ defmodule Karakuri.DesignerTest do
   alias Karakuri.Designer.Registry
 
   @requirement "Calculate the answer to life, the universe, and everything."
-  @sample %{text: "And the answer is 42."} |> Jason.encode!()
+  @sample "And the answer is 42."
 
   setup do
     Registry.clear()
